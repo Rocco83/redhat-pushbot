@@ -1,0 +1,13 @@
+# Mandatory settings
+# The TOKEN for the bot. Please read the README
+TOKEN = '<bot token>'
+
+# Optional settings
+# Red Hat customer portal URL
+fqdn = "https://api.access.redhat.com"
+
+# Timeout in seconds for the Red Hat poller
+rhpollertimeout = 60
+
+# database filename to be written
+dbfile = "db.json"

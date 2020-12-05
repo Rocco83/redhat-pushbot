@@ -1,0 +1,7 @@
+venv
+*.log
+*config.py
+*.json
+*.xml
+.handler-saves
+__pycache__
