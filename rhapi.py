@@ -2,6 +2,7 @@
 """
 This is the Red Hat Customer Portal API poller, to query for the cases
 """
+import sys
 import urllib.request
 from pprint import pformat
 import concurrent.futures
@@ -12,9 +13,22 @@ import bot
 import config
 import db
 
+#logging.basicConfig(
+#    format='%(asctime)s %(levelname)-8s %(message)s',
+#    level=logging.DEBUG,
+#    datefmt='%Y-%m-%d %H:%M:%S')
+#logger = logging.getLogger(__name__)
+logger = logging.getLogger('RedHatAPI')
+formatter = logging.Formatter(
+    '%(asctime)s (%(filename)s:%(lineno)d %(threadName)s) %(levelname)s - %(name)s: "%(message)s"'
+)
+console_output_handler = logging.StreamHandler(sys.stderr)
+console_output_handler.setFormatter(formatter)
+logger.addHandler(console_output_handler)
 
-#logging.basicConfig(level=logging.INFO)
-logging.basicConfig(level=logging.DEBUG)
+logger.setLevel(logging.ERROR)
+logger.setLevel(logging.DEBUG)
+
 
 
 class HTTPLoginFailed(Exception):
@@ -24,22 +38,30 @@ class HTTPLoginFailed(Exception):
         Exception.__init__(self, 'Wrong username or password exception for user %s' % username)
 
 
-def casepoller():
+def casepoller(event):
     """
     Main class, iterate over the database.
     Open a thread for each user configured.
     Each thread will modify the database.
     A final version of the database will be written on the disk.
     """
+
     while True:
-        logging.info("case poller started")
-        pollerthread = concurrent.futures.ProcessPoolExecutor()
-        db.dictdb = dict(pollerthread.map(casesiterator, db.dictdb.items()))
-        pollerthread.shutdown(wait=True)
-        # race condition, what if we save a new user whike this function is running?
-        db.savejson(config.dbfile, db.dictdb)
-        logging.info("case poller standby for the next iteration, sleeping for " + str(config.rhpollertimeout) + " seconds")
-        time.sleep(config.rhpollertimeout)
+        try:
+            logger.info("case poller started")
+            if event.is_set():
+                logger.info("event received, stopping the thread")
+                break
+            pollerthread = concurrent.futures.ProcessPoolExecutor()
+            db.dictdb = dict(pollerthread.map(casesiterator, db.dictdb.items()))
+            pollerthread.shutdown(wait=True)
+            # race condition, what if we save a new user whike this function is running?
+            db.savejson(config.dbfile, db.dictdb)
+            logger.info("case poller standby for the next iteration, sleeping for " + str(config.rhpollertimeout) + " seconds")
+            time.sleep(config.rhpollertimeout)
+        except:
+            e = sys.exc_info()[0]
+            logger.error("error: " + e)
 
 def casesiterator(chat_id_tuple):
     """
@@ -48,10 +70,10 @@ def casesiterator(chat_id_tuple):
     """
     # the tuple must be splittted between the chat_id (user id in telegram) and the associated configuration dict
     chat_id, user_dict = chat_id_tuple
-    logging.info("chatid: " + chat_id + ", parsing the following database\n" + pformat(chat_id_tuple, depth=3))
+    logger.info("chatid: " + chat_id + ", parsing the following database\n" + pformat(chat_id_tuple, depth=3))
     # verify that the user has a valid configuration
     if not db.checkuserconfiguration(chat_id, db.dictdb):
-        logging.info("chatid: " + chat_id + ", no valid configuration for the user")
+        logger.info("chatid: " + chat_id + ", no valid configuration for the user")
     else:
         # if notify index is not set, assign the default value
         if not "notify" in user_dict:
@@ -61,13 +83,13 @@ def casesiterator(chat_id_tuple):
         if "cases" in user_dict and user_dict["cases"] is not None:
             # extract the case number and the relative hash (xml dump) associated
             for casenumber, casedump in user_dict["cases"].items():
-                logging.info("chatid: " + chat_id + ", case " + casenumber + ", a valid configuration has been found. The case parsing is going to be executed.")
+                logger.info("chatid: " + chat_id + ", case " + casenumber + ", a valid configuration has been found. The case parsing is going to be executed.")
                 # case is an hash, the key is the case number, the value is an hash.
                 # the hash has None value once added, the case xml afterward
                 # parsecase function will be called for every case
                 user_dict["cases"][casenumber] = parsecase(chat_id, casenumber, casedump, user_dict["credentials"], user_dict["notify"])
         else:
-            logging.info("chatid: " + chat_id + ", no cases hash has been found for the user")
+            logger.info("chatid: " + chat_id + ", no cases hash has been found for the user")
 
     # always return a value, which can be the original one or the modified one
     return str(chat_id), user_dict
@@ -80,29 +102,29 @@ def parsecase(chat_id, casenumber, storedcase, credentials, notify):
     If there is a new comment matching the requirements, this will be sent.
     In any case return the dict to replace the current value.
     """
-    logging.debug("chatid: " + chat_id + ", case " + casenumber + ", parsing started.")
+    logger.debug("chatid: " + chat_id + ", case " + casenumber + ", parsing started.")
 
     # extract the last comment dict
     onlinecase = loadcase(casenumber, credentials, notify)
     # check if there is a comment
     if onlinecase is None:
         # there are still no comments, continue
-        logging.info("chatid: " + chat_id + ", case " + casenumber + ", no comment has been made in the case. Skipping further checks.")
+        logger.info("chatid: " + chat_id + ", case " + casenumber + ", no comment has been made in the case. Skipping further checks.")
         return None
     # lastModifiedDate must be of the comment, not of the case. Otherwise every comment will trigger a notification.
     if storedcase is not None and 'lastcomment' in storedcase and onlinecase["lastcomment"].get('lastModifiedDate') == storedcase["lastcomment"].get('lastModifiedDate'):
         # if the comment retireve is the same stored, just continue to the next case
-        logging.info("chatid: " + chat_id + ", case " + casenumber + ", the saved comment is the same as the latest comment in the Customer Portal")
+        logger.info("chatid: " + chat_id + ", case " + casenumber + ", the saved comment is the same as the latest comment in the Customer Portal")
         return storedcase
 
     if "text" in onlinecase['lastcomment']:
         caseupdate = onlinecase['lastcomment'].get("text")
-        logging.info(caseupdate)
-        logging.info("chatid: " + chat_id + ", case " + casenumber + ", sending update via telegram")
+        logger.info(caseupdate)
+        logger.info("chatid: " + chat_id + ", case " + casenumber + ", sending update via telegram")
         caseupdatestrip = (caseupdate[:1000] + '\n[...]') if len(caseupdate) > 1000 else caseupdate
         # notify the user via telegram
         bot.pushmessage(chat_id, "Case " + onlinecase.get('@caseNumber') + "\n" + onlinecase.get('summary') + "\n"  + onlinecase.get('status') + "\n```\n" + caseupdatestrip + "\n```")
-        logging.debug("chatid: " + chat_id + ", case " + casenumber + ", the update has been sent via telegram")
+        logger.debug("chatid: " + chat_id + ", case " + casenumber + ", the update has been sent via telegram")
     else:
         # TODO throw an exception
         return None
@@ -123,7 +145,7 @@ def loadcase(case, credentials, notify):
 
     # create a dict from the XML
     case_dict = xmltodict.parse(res_body.decode('utf-8'))
-    logging.debug("loadcase() case: " + case + ", case_dict\n" + pformat(case_dict))
+    logger.debug("loadcase() case: " + case + ", case_dict\n" + pformat(case_dict))
 
     # if ["comments"]["comment"] key does not exist, the first reply is still missing
     if case_dict['case']['comments'] is None or not "comment" in case_dict['case']['comments']:
@@ -153,24 +175,24 @@ def loadcase(case, credentials, notify):
             lastcomment = next(commentsiter)
             # check if we have a real comment, on the first iteration no
             if lastcomment.get('@id') is None:
-                logging.info("case " + case + ", empty")
+                logger.info("case " + case + ", empty")
                 continue
             # notify is a list, default value ["Associate"]
             # check if the Type that posted the comment is matching the deired one
             if lastcomment.get('createdByType') in notify:
                 # the comment is matching, exiting from the loop
-                logging.info("case " + case + ", found comment id " + lastcomment["@id"])
+                logger.info("case " + case + ", found comment id " + lastcomment["@id"])
                 break
             else:
                 # extract the next comment from the structure and restart the loop
-                logging.debug("case " + case + ", NOT suitable comment id " + lastcomment["@id"])
+                logger.debug("case " + case + ", NOT suitable comment id " + lastcomment["@id"])
     # This exception means that there are no further comments in the iter
     except StopIteration:
-        logging.info("case " + case + ", no suitable comments has been found, exiting from the function")
+        logger.info("case " + case + ", no suitable comments has been found, exiting from the function")
         return None
     # a general exception handler
     except Exception as e:
-        logging.error("case " + case + ", Exception parsing the comments, error:\n" + repr(e) + "\ncomments array:\n" + repr(comments) + "\nlastcomment parsed:\n" + repr(lastcomment))
+        logger.error("case " + case + ", Exception parsing the comments, error:\n" + repr(e) + "\ncomments array:\n" + repr(comments) + "\nlastcomment parsed:\n" + repr(lastcomment))
 
     # create the return value
     complete_case = case_dict['case']
