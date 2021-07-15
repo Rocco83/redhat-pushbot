@@ -22,9 +22,10 @@ logger = logging.getLogger('RedHatAPI')
 formatter = logging.Formatter(
     '%(asctime)s (%(filename)s:%(lineno)d %(threadName)s) %(levelname)s - %(name)s: "%(message)s"'
 )
-console_output_handler = logging.StreamHandler(sys.stderr)
-console_output_handler.setFormatter(formatter)
-logger.addHandler(console_output_handler)
+rhapilogger = logging.StreamHandler(sys.stderr)
+rhapilogger.setFormatter(formatter)
+logger.addHandler(rhapilogger)
+#logger.FileHandler('tickets-pushbot.log')
 
 logger.setLevel(logging.ERROR)
 logger.setLevel(logging.DEBUG)
@@ -118,16 +119,19 @@ def parsecase(chat_id, casenumber, storedcase, credentials, notify):
         return storedcase
 
     if "text" in onlinecase['lastcomment']:
-        caseupdate = onlinecase['lastcomment'].get("text")
-        logger.info(caseupdate)
-        logger.info("chatid: " + chat_id + ", case " + casenumber + ", sending update via telegram")
-        caseupdatestrip = (caseupdate[:1000] + '\n[...]') if len(caseupdate) > 1000 else caseupdate
-        # notify the user via telegram
-        bot.pushmessage(chat_id, "Case " + onlinecase.get('@caseNumber') + "\n" + onlinecase.get('summary') + "\n"  + onlinecase.get('status') + "\n```\n" + caseupdatestrip + "\n```")
-        logger.debug("chatid: " + chat_id + ", case " + casenumber + ", the update has been sent via telegram")
+        try:
+            caseupdate = onlinecase['lastcomment'].get("text")
+            logger.info(caseupdate)
+            logger.info("chatid: " + chat_id + ", case " + casenumber + ", sending update via telegram")
+            caseupdatestrip = (caseupdate[:1000] + '\n[...]') if len(caseupdate) > 1000 else caseupdate
+            # notify the user via telegram
+            bot.pushmessage(chat_id, "Case " + onlinecase.get('@caseNumber') + "\n" + onlinecase.get('summary') + "\n"  + onlinecase.get('status') + "\n```\n" + caseupdatestrip + "\n```")
+            logger.debug("chatid: " + chat_id + ", case " + casenumber + ", the update has been sent via telegram")
+        except Exception as e:
+            logger.error("case " + case + ", Exception parsing the comments, error:\n" + repr(e) + "\ncomments array:\n" + repr(comments) + "\nlastcomment parsed:\n" + repr(lastcomment))
     else:
-        # TODO throw an exception
-        return None
+        raise ValueError("no [lastcomment][text] for case " + casenumber)
+        #return None
 
     # return the updated case dict
     return onlinecase
