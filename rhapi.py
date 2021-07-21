@@ -223,6 +223,8 @@ def rhquery(auth_user, auth_pass, url):
         res = urllib.request.urlopen(url)
     except urllib.error.HTTPError as e:
         raise HTTPLoginFailed(auth_user)
+    except Exception as e:
+        logger.exception(repr(message) + repr(e))
     res_body = res.read()
 
     return res_body
