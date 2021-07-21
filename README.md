@@ -106,6 +106,7 @@ GET https://api.access.redhat.com/rs/cases/00000000/comments
 ### Reference guide
 The reference documentation for the customer portal used is the following
 [Red Hat&reg; API guide](https://access.redhat.com/documentation/en-us/red_hat_customer_portal/1/html/customer_portal_integration_guide/index)
+TODO implement a token from Red Hat: https://access.redhat.com/articles/3626371
 
 
 ## TODO
