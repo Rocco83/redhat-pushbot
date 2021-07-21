@@ -3,6 +3,8 @@
 This is the Telegram poller, to interact with the users
 """
 import logging
+import time # needed for timeout on pushmessage
+import timeout_decorator # needed for timeout on pushmessage
 import telebot
 import rhapi
 import config
@@ -16,6 +18,8 @@ bot = telebot.TeleBot(config.TOKEN, threaded=False)
 logger = telebot.logger
 #telebot.logger.setLevel(logging.INFO)
 telebot.logger.setLevel(logging.DEBUG)
+#telebot.logger.FileHandler('tickets-pushbot.log')
+
 
 # Enable saving next step handlers to file "./.handlers-saves/step.save".
 # Delay=2 means that after any change in next step handlers (e.g. calling register_next_step_handler())
@@ -27,6 +31,7 @@ bot.enable_save_next_step_handlers(delay=2)
 bot.load_next_step_handlers()
 
 
+@timeout_decorator.timeout(10, use_signals=False, timeout_exception=TimeoutError, exception_message="Timed out sending the message on Telegram")
 def pushmessage(chat_id, msg):
     """
     Push the message sent from outside to the needed chat_id
@@ -319,10 +324,14 @@ def process_notification_step(message):
     bot.send_message(chat_id, 'The notification setting has been set to ' + repr(notify))
 
 
-def run():
+def run(event):
     """
     Main class, iterate over the bot.
     The bot will be initialized and will iterate forever.
     """
+    # TODO implement event
     global bot
-    bot.polling(none_stop=True, timeout=60)
+    try:
+        bot.polling(none_stop=True, timeout=60)
+    except Exception as e:
+        logger.exception(repr(message) + repr(e))
