@@ -1,10 +1,11 @@
-#!/usr/bin/python3
+#!/usr/bin/env python3
 """
 Main file to run the Bot and the Red Hat API poller
 """
 import concurrent.futures
 import threading
 import time
+import logging
 import bot
 import rhapi
 import config
@@ -13,12 +14,15 @@ import db
 # global variable
 db.dictdb = db.loadjson(config.dbfile)
 
+#logging.basicConfig(filename='wrapper-latest.log')
+#logging.config.fileConfig('/path/to/logging.conf')
+
 if __name__ == "__main__":
     event = threading.Event()
     try:
         with concurrent.futures.ThreadPoolExecutor() as executor:
             # start the Telegram Bot thread
-            botthread = executor.submit(bot.run)
+            botthread = executor.submit(bot.run, event)
             # start the Red Hat API thread
             pollerthread = executor.submit(rhapi.casepoller, event)
             # TODO must be able to catch ctrl+c
